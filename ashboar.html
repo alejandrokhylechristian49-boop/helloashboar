@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IoT Weather Station Dashboard</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+<style>
+/* --------------------------------------------------
+   HELLO KITTY PASTEL THEME 🎀💗✨
+-------------------------------------------------- */
+
+body {
+  margin: 0;
+  padding: 20px;
+  font-family: "Inter", sans-serif;
+  background: #ffe6f2; /* soft pink */
+  background-image: url("https://i.imgur.com/p0sD9hQ.png"); /* subtle hello kitty bg */
+  background-size: 200px;
+  color: #d63384;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 25px;
+  font-size: 36px;
+  font-weight: 800;
+  background: linear-gradient(to right, #ff99cc, #ff66b3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Card base */
+.card {
+  background: rgba(255, 255, 255, 0.85);
+  padding: 22px;
+  margin: 18px 0;
+  border-radius: 20px;
+  border: 3px solid #ffb3d9;
+  box-shadow: 0 6px 20px rgba(255, 150, 200, 0.35);
+}
+
+/* Grid layout */
+.grid {
+  display: grid;
+  gap: 18px;
+}
+
+@media (min-width: 768px) {
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-1 { grid-template-columns: 1fr; }
+}
+
+/* Sensor boxes */
+.sensor-box, .wind-box {
+  text-align: center;
+  padding: 20px;
+  border-radius: 18px;
+  background: #fff0f7;
+  border: 2px solid #ff99cc;
+  transition: 0.3s;
+}
+
+.sensor-box:hover, .wind-box:hover {
+  transform: translateY(-4px);
+  background: #ffe0f0;
+}
+
+.sensor-label {
+  opacity: 0.85;
+  font-size: 14px;
+  margin-bottom: 6px;
+  color: #cc2277;
+}
+
+.sensor-value, .wind-big-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #ff4da6;
+}
+
+.icon {
+  font-size: 40px;
+  margin-bottom: 5px;
+  display: block;
+}
+
+/* Hello Kitty icons */
+.icon::before {
+  filter: drop-shadow(0 0 4px #ffb3d9);
+}
+
+/* Wind */
+.wind-big-value {
+  font-size: 46px;
+}
+
+/* Switch */
+.switch {
+  position: relative;
+  width: 60px;
+  height: 34px;
+  display: inline-block;
+}
+
+.switch input { opacity: 0; width: 0; height: 0; }
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #ff99cc;
+  transition: .4s;
+  border-radius: 34px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "🎀";
+  font-size: 20px;
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #ff66b3;
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px) rotate(20deg);
+}
+
+/* Status badge */
+.badge {
+  padding: 8px 14px;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.online { 
+  background: #d4f8d4;
+  color: #2e7d32;
+  border: 2px solid #9be89b;
+}
+
+.offline { 
+  background: #ffd6d6;
+  color: #b71c1c;
+  border: 2px solid #ff9a9a;
+}
+
+/* Chart styling */
+.chart-card {
+  padding: 12px;
+  height: 250px;
+  border: 2px solid #ffb3d9;
+  background: rgba(255,255,255,0.85);
+  border-radius: 20px;
+}
+
+canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Kitty-themed chart colors */
+:root {
+  --chart-line: #ff66b3;
+  --chart-fill: rgba(255,102,179,0.25);
+}
+</style>
+</head>
+
+<body>
+
+<h1>🌤 IoT Weather Monitoring Dashboard</h1>
+
+<!-- TOP = Temp / Hum / Pressure -->
+<div class="card grid grid-3">
+  <div class="sensor-box">
+    <span class="icon">🌡️</span>
+    <div class="sensor-label">Temperature</div>
+    <div id="temp" class="sensor-value">-- °C</div>
+  </div>
+
+  <div class="sensor-box">
+    <span class="icon">💧</span>
+    <div class="sensor-label">Humidity</div>
+    <div id="hum" class="sensor-value">-- %</div>
+  </div>
+
+  <div class="sensor-box">
+    <span class="icon">📈</span>
+    <div class="sensor-label">Pressure</div>
+    <div id="pressure" class="sensor-value">-- hPa</div>
+  </div>
+</div>
+
+<!-- MIDDLE = Light / Rain -->
+<div class="card grid grid-2">
+  <div class="sensor-box">
+    <span class="icon">🌞</span>
+    <div class="sensor-label">Light</div>
+    <div id="lux" class="sensor-value">-- lx</div>
+  </div>
+
+  <div class="sensor-box">
+    <span class="icon">🌧️</span>
+    <div class="sensor-label">Rain Level</div>
+    <div id="rain" class="sensor-value">-- %</div>
+  </div>
+</div>
+
+<!-- BOTTOM = Wind Speed / Direction -->
+<div class="card grid grid-2">
+  <div class="wind-box">
+    <span class="icon">💨</span>
+    <div class="wind-label">Wind Speed</div>
+    <div id="wind" class="wind-big-value">-- m/s</div>
+  </div>
+
+  <div class="wind-box">
+    <span class="icon">🧭</span>
+    <div class="wind-label">Direction</div>
+    <div id="windDir" class="wind-big-value">--</div>
+  </div>
+</div>
+
+<!-- LED Control -->
+<div class="card" style="display:flex;flex-direction:column;gap:18px;">
+
+  <strong style="font-size:18px;">💡 LED Control</strong>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <span>LED 1</span>
+    <label class="switch">
+      <input id="led1" type="checkbox">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <span>LED 2</span>
+    <label class="switch">
+      <input id="led2" type="checkbox">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+</div>
+
+
+<!-- Status -->
+<div class="card">
+  Device Status: <span id="heartbeat" class="badge offline">offline</span>
+</div>
+
+<!-- CHARTS -->
+<div class="card chart-card"><canvas id="tempChart"></canvas></div>
+<div class="card chart-card"><canvas id="humChart"></canvas></div>
+<div class="card chart-card"><canvas id="luxChart"></canvas></div>
+<div class="card chart-card"><canvas id="windChart"></canvas></div>
+<div class="card chart-card"><canvas id="windDirChart"></canvas></div>
+<div class="card chart-card"><canvas id="pressureChart"></canvas></div>
+<div class="card chart-card"><canvas id="rainChart"></canvas></div>
+
+
+<script>
+/* --------------------------------------------------
+   MQTT CONNECTION
+-------------------------------------------------- */
+const options = {
+  connectTimeout: 4000,
+  clientId: "web-" + Math.random().toString(16).substr(2, 8),
+  username: "esp32user",
+  password: "Esp32user",
+};
+
+const client = mqtt.connect(
+  "wss://5be7415cd7474f8f9d61534138d01818.s1.eu.hivemq.cloud:8884/mqtt",
+  options
+);
+
+client.on("connect", () => {
+  client.subscribe("esp32/sensors");
+  client.subscribe("esp32/heartbeat");
+});
+
+let lastHeartbeatTime = 0;
+const heartbeatTimeout = 5000;
+
+/* --------------------------------------------------
+   SENSOR RECEIVE
+-------------------------------------------------- */
+let lastChartUpdate = 0;
+
+client.on("message", (topic, msg) => {
+  msg = msg.toString();
+
+  if (topic === "esp32/sensors") {
+    let d = JSON.parse(msg);
+
+    temp.textContent = d.temp + " °C";
+    hum.textContent = d.hum + " %";
+    lux.textContent = d.lux + " lx";
+    wind.textContent = d.windSpeed + " m/s";
+    pressure.textContent = d.pres + " hPa";
+    windDir.textContent = d.windDir;
+    rain.textContent = d.rain + " %";
+
+    let now = Date.now();
+
+    if (now - lastChartUpdate >= 60000) {
+      addChartData(tempChart, d.temp);
+      addChartData(humChart, d.hum);
+      addChartData(luxChart, d.lux);
+      addChartData(windChart, d.windSpeed);
+      addChartData(windDirChart, d.windDir);
+      addChartData(pressureChart, d.pres);
+      addChartData(rainChart, d.rain);
+      lastChartUpdate = now;
+    }
+  }
+
+  if (topic === "esp32/heartbeat") {
+    lastHeartbeatTime = Date.now();
+    setStatus("online");
+  }
+});
+
+/* STATUS PING */
+setInterval(() => {
+  if (Date.now() - lastHeartbeatTime > heartbeatTimeout) {
+    setStatus("offline");
+  }
+}, 1000);
+
+function setStatus(state) {
+  const hb = document.getElementById("heartbeat");
+  hb.textContent = state;
+  hb.className = "badge " + state;
+}
+
+/* --------------------------------------------------
+   LED CONTROL
+-------------------------------------------------- */
+led1.onchange = () => sendLED();
+led2.onchange = () => sendLED();
+
+function sendLED() {
+  client.publish(
+    "esp32/leds",
+    `LED1:${led1.checked ? "ON" : "OFF"},LED2:${led2.checked ? "ON" : "OFF"}`
+  );
+}
+
+/* --------------------------------------------------
+   CHART SYSTEM
+-------------------------------------------------- */
+function createChart(ctx, label) {
+  return new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: label,
+          data: [],
+          borderWidth: 2,
+          borderColor: "#38bdf8",
+          backgroundColor: "rgba(56,189,248,0.2)",
+          tension: 0.35,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        y: { 
+          grid: { color: "#ddd" },        // lighter grid
+          ticks: { color: "#000" }        // black labels
+        },
+        x: { 
+          grid: { color: "#ddd" },
+          ticks: { color: "#000" }        // black labels
+        },
+      },
+      plugins: {
+        legend: { 
+          labels: { color: "#000" }       // black legend
+        },
+      },
+    },
+  });
+}
+
+
+function addChartData(chart, value) {
+  let t = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  chart.data.labels.push(t);
+  chart.data.datasets[0].data.push(value);
+
+  if (chart.data.labels.length > 60) {
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+
+  chart.update();
+}
+
+/* BUILD CHARTS */
+const tempChart = createChart(document.getElementById("tempChart"), "Temperature");
+const humChart = createChart(document.getElementById("humChart"), "Humidity");
+const luxChart = createChart(document.getElementById("luxChart"), "Light");
+const windChart = createChart(document.getElementById("windChart"), "Wind Speed");
+
+/* Wind Direction → bar chart */
+const windDirChart = new Chart(document.getElementById("windDirChart"), {
+  type: "bar",
+  data: {
+    labels: [],
+    datasets: [{
+      label: "Wind Direction",
+      data: [],
+      backgroundColor: "rgba(56,189,248,0.5)",
+      borderColor: "#38bdf8",
+      borderWidth: 1
+    }]
+  },
+  options: {
+    maintainAspectRatio: false,
+    scales: {
+      y: { 
+        grid: { color: "#ddd" }, 
+        ticks: { color: "#000" }     // black y-axis
+      },
+      x: { 
+        grid: { color: "#ddd" },
+        ticks: { color: "#000" }     // black x-axis
+      },
+    },
+    plugins: {
+      legend: { labels: { color: "#000" } }  // black legend
+    },
+  }
+});
+
+const pressureChart = createChart(document.getElementById("pressureChart"), "Pressure");
+const rainChart = createChart(document.getElementById("rainChart"), "Rain");
+</script>
+
+</body>
+</html>
